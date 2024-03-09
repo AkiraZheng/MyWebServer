@@ -8,7 +8,8 @@
 		"files.associations": {
 			"iostream": "cpp",
 			"string": "cpp",
-			"io_context": "cpp"
+			"io_context": "cpp",
+			"executor": "cpp"
 		}
 	}
 }
