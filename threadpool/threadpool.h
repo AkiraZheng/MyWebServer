@@ -6,10 +6,10 @@
 #include "../lock/locker.h"
 #include "../CGImysql/sql_connection_pool.h"
 
-
 //这里的模板类主要指http_conn具体类
 template <typename T>
 class threadpool{
+public:
     /*thread_number是线程池中线程的数量，max_requests是请求队列中最多允许的、等待处理的请求的数量*/
     threadpool(int actor_model, connection_pool *connPool, int thread_number = 8, int max_request = 10000);
     ~threadpool();
@@ -85,7 +85,7 @@ bool threadpool<T>::append(T *request, int state){
         return false;
     }
 
-    request->m_state = state;
+    request->m_state = state;//state 0代表读事件，state 1代表写事件
     m_workerqueue.push_back(request);
 
     m_queuelocker.unlock();
@@ -149,7 +149,7 @@ void threadpool<T>::run(){
         if(m_actor_model == 1){//Reactor模式
             if(request->m_state == 0){//读事件
                 if(request->read_once()){//读取数据成功
-                    request->improv = 1;
+                    request->improv = 1;//通知主线程中的dealwithread，表示该任务已交由工作线程处理
                     connectionRAII mysqlcon(&request->mysql, m_connPool);//自动获取数据库连接
                     request->process();//处理请求:解析请求报文，处理业务逻辑，生成响应报文
                 }

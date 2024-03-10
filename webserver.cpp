@@ -2,7 +2,7 @@
 
 WebServer::WebServer(){
     //http_conn类对象
-    // users = new http_conn[MAX_FD];
+    users = new http_conn[MAX_FD];
 
     //root文件夹路径
     // char server_path[200];
@@ -21,9 +21,9 @@ WebServer::~WebServer(){
     close(m_listenfd);
     // close(m_pipefd[1]);
     // close(m_pipefd[0]);
-    // delete[] users;
+    delete[] users;
     // delete[] users_timer;
-    // delete m_pool;
+    delete m_pool;
 }
 
 void WebServer::init(int port, string user, string passWord, string databaseName, int log_write, 
@@ -40,6 +40,22 @@ void WebServer::init(int port, string user, string passWord, string databaseName
     m_TRIGMode = trigmode;
     m_close_log = close_log;
     m_actormodel = actor_model;
+}
+
+//初始化创建线程池
+void WebServer::thread_pool()
+{
+    m_pool = new threadpool<http_conn>(m_actormodel, m_connPool, m_thread_num);//m_connPool是数据库连接池
+}
+
+//初始化创建共享数据库连接池
+void WebServer::sql_pool()
+{
+    m_connPool = connection_pool::GetInstance();//初始化线程连接池单例
+    m_connPool->init("localhost", m_user, m_passWord, m_databaseName, 3306, m_sql_num, m_close_log);
+
+    //初始化数据库读取表
+    users->initmysql_result(m_connPool);
 }
 
 void WebServer::trig_mode()
@@ -73,7 +89,7 @@ void WebServer::trig_mode()
     // std::cout << "m_CONNTrigmode = " << m_CONNTrigmode << std::endl;
 }
 
-//处理服务端收到客户端连接请求
+//处理服务端收到客户端 连接请求
 bool WebServer::dealclientdata(){
     struct sockaddr_in client_address;
     socklen_t client_addrlength = sizeof(client_address);
@@ -88,11 +104,13 @@ bool WebServer::dealclientdata(){
             // LOG_ERROR("%s:errno is:%d", "accept error", errno);
             return false;
         }
-        // if(http_conn::m_user_count >= MAX_FD){
-        //     // show_error(connfd, "Internal server busy");
-        //     // LOG_ERROR("%s", "Internal server busy");
-        //     return false;
-        // }
+
+        //服务器连接数量达到上限了，拒绝浏览器的连接
+        if(http_conn::m_user_count >= MAX_FD){
+            utils.show_error(connfd, "Internal server busy");//向客户端发送错误信息，并关闭连接
+            // LOG_ERROR("%s", "Internal server busy");
+            return false;
+        }
         // timer(connfd, client_address);//在timer中执行http_conn初始化,并将connfd加入epoll监听
     }
 
@@ -105,11 +123,13 @@ bool WebServer::dealclientdata(){
                 // LOG_ERROR("%s:errno is:%d", "accept error", errno);
                 break;
             }
-            // if(http_conn::m_user_count >= MAX_FD){
-            //     // show_error(connfd, "Internal server busy");
-            //     // LOG_ERROR("%s", "Internal server busy");
-            //     break;
-            // }
+
+            //服务器连接数量达到上限了，拒绝浏览器的连接
+            if(http_conn::m_user_count >= MAX_FD){
+                utils.show_error(connfd, "Internal server busy");//向客户端发送错误信息，并关闭连接
+                // LOG_ERROR("%s", "Internal server busy");
+                return false;
+            }
             // timer(connfd, client_address);//在timer中执行http_conn初始化,并将connfd加入epoll监听
         }
         return false;
@@ -125,6 +145,48 @@ bool WebServer::dealclientdata(){
 void WebServer::dealwithread(int sockfd){
     // util_timer *timer = users_timer[sockfd].timer;
 
+    //Reactor模式下，直接将fd交给工作线程，由工作线程处理socket读数据操作
+    if(m_actormodel == 1){
+        // if (timer)
+        // {
+        //     adjust_timer(timer);
+        // }
+
+        //主线程将读事件放到线程池请求队列中就结束了，其它的交给线程池
+        m_pool->append(users + sockfd, 0);
+
+        //等待事件别工作线程读取完，进入解析状态
+        while(true){
+            if(users[sockfd].improv == 1){//任务被工作线程取出就会置1
+                // if (1 == users[sockfd].timer_flag)
+                // {
+                //     deal_timer(timer, sockfd);
+                //     users[sockfd].timer_flag = 0;
+                // }
+                users[sockfd].improv = 0;//重置该fd对应的http为0
+                break;
+            }
+        }
+    }
+    //proactor模式下，主线程先调用http_conn的read_once()读取数据，然后再将存有读取结果的http_conn对象放入线程池
+    //也就是工作线程只处理http_conn对象的报文解析处理业务工作，不对socket进行读写
+    else{
+        if(users[sockfd].read_once()){//主线程中先处理读事件
+            // LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+
+            //将读取的数据放在线程池请求队列中进行解析和打包响应
+            m_pool->append_p(users + sockfd);
+
+            // if (timer)
+            // {
+            //     adjust_timer(timer);
+            // }
+        }
+        // else
+        // {
+        //     deal_timer(timer, sockfd);
+        // }
+    }
 }
 
 /*处理客户端fd的写事件(发送数据)
@@ -132,6 +194,47 @@ void WebServer::dealwithread(int sockfd){
 * 并发模式默认是proactor
 */
 void WebServer::dealwithwrite(int sockfd){
+    // util_timer *timer = users_timer[sockfd].timer;
+
+    //Reactor模式下，直接将fd交给工作线程，由工作线程处理socket写数据操作
+    if(m_actormodel == 1){
+        // if (timer)
+        // {
+        //     adjust_timer(timer);
+        // }
+
+        //主线程将写事件放到线程池请求队列中就结束了，其它的交给线程池
+        m_pool->append(users+sockfd, 1);
+
+        while(true){
+            if(users[sockfd].improv == 1){//任务被工作线程取出就会置1
+                // if (1 == users[sockfd].timer_flag)
+                // {
+                //     deal_timer(timer, sockfd);
+                //     users[sockfd].timer_flag = 0;
+                // }
+                users[sockfd].improv = 0;
+                break;
+            }
+        }
+    }
+    //proactor模式下，主线程先调用http_conn的write()发送数据，然后再将存有写结果的http_conn对象放入线程池
+    //也就是工作线程只处理http_conn对象的报文解析处理业务工作，不对socket进行读写
+    //写事件一般是在响应中打包完数据了，所以写完就结束了，这里不需要再将任务放进线程池中
+    else{
+        if(users[sockfd].write()){//主线程中先处理写事件
+            // LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+
+            // if (timer)
+            // {
+            //     adjust_timer(timer);
+            // }
+        }
+        // else
+        // {
+        //     deal_timer(timer, sockfd);
+        // }
+    }
 }
 
 void WebServer::eventListen(){
@@ -183,7 +286,7 @@ void WebServer::eventListen(){
 
     //将监听的socket加入epoll监听
     utils.addfd(m_epollfd, m_listenfd, false, m_LISTENTrigmode);
-    // http_conn::m_epollfd = m_epollfd;
+    http_conn::m_epollfd = m_epollfd;//HTTP类里面的静态变量m_epollfd其实就是主线程中的epool，是同一个
 
     //通过socketpair创建全双工管道,管道也是一种文件描述符
     //管道作用:可以通过管道在程序中实现进程间通信

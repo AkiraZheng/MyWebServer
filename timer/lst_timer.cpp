@@ -1,4 +1,5 @@
 #include "lst_timer.h"
+#include "../http/http_conn.h"
 
 // void Utils::init(int timeslot){
 //     //设置定时器时间间隔
@@ -31,6 +32,13 @@ void Utils::addfd(int epollfd, int fd, bool one_shot, int TRIGMode){
     setnonblocking(fd);
 }
 
+//向客户端发送错误信息，并关闭连接
+void Utils::show_error(int connfd, const char *info)
+{
+    send(connfd, info, strlen(info), 0);
+    close(connfd);
+}
+
 //对文件描述符设置非阻塞模式:listenfd和connfd
 int Utils::setnonblocking(int fd){
     //使用 fcntl 函数来设置文件描述符的属性
@@ -39,3 +47,4 @@ int Utils::setnonblocking(int fd){
     fcntl(fd, F_SETFL, new_option);
     return old_option;
 }
+

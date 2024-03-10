@@ -9,7 +9,9 @@
 			"iostream": "cpp",
 			"string": "cpp",
 			"io_context": "cpp",
-			"executor": "cpp"
+			"executor": "cpp",
+			"*.tcc": "cpp",
+			"cerrno": "cpp"
 		}
 	}
 }

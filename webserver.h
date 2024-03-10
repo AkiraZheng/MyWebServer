@@ -5,14 +5,18 @@
 #include <string.h>
 #include <iostream>
 #include <cassert>
+#include <errno.h>
+#include <stdlib.h>
 
 // epoll并发
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>//getopt，close函数
 #include <netinet/in.h>//sockaddr_in
+#include <fcntl.h>
 
-#include "./timer/lst_timer.h"
+#include "./threadpool/threadpool.h"
+#include "./http/http_conn.h"
 
 const int MAX_FD = 65536;           //最大文件描述符
 const int MAX_EVENT_NUMBER = 10000; //最大事件数
@@ -29,6 +33,9 @@ public:
               int log_write , int opt_linger, int trigmode, int sql_num,
               int thread_num, int close_log, int actor_model);
     
+    void thread_pool();
+    void sql_pool();
+    // void log_write();
     void trig_mode();
     void eventListen();//socket监听，实现epoll
     void eventLoop();//epoll_wait阻塞监听事件
@@ -48,17 +55,17 @@ public:
 
     int m_pipefd[2];
     int m_epollfd;
-    // http_conn *users;
+    http_conn *users;
 
     //数据库相关
-    // connection_pool *m_connPool;
+    connection_pool *m_connPool;//共享数据库连接池
     string m_user;         //登陆数据库用户名
     string m_passWord;     //登陆数据库密码
     string m_databaseName; //使用数据库名
     int m_sql_num;
 
     //线程池相关
-    // threadpool<http_conn> *m_pool;
+    threadpool<http_conn> *m_pool;
     int m_thread_num;
 
     //epoll_event相关
