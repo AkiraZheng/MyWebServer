@@ -33,12 +33,12 @@ public:
     static const int READ_BUFFER_SIZE = 2048;//浏览器请求报文的最大长度
     static const int WRITE_BUFFER_SIZE = 1024;//服务器响应报文的最大长度
 
-    //报文的请求方法，本项目中只用到了GET和POST
+    //报文的请求方法，本项目中只用到了GET和POST：分别用于请求资源（网页资源）和提交用户表单（登陆注册）
     enum METHOD {GET = 0, POST, HEAD, PUT, DELETE, TRACE, OPTIONS, CONNECT, PATH};
     //主状态机的状态：解析报文请求行(REQUESTLINE)，解析报文头部(HEADER)，解析报文内容(CONTENT)
     //主状态机主要用于解析报文，从状态机用于读line给主状态机
     enum CHECK_STATE {CHECK_STATE_REQUESTLINE = 0, CHECK_STATE_HEADER, CHECK_STATE_CONTENT};
-    //从状态机的状态：从buff中读取一个完整的行，状态有行出错，行数据尚且不完整等
+    //从状态机的状态：从buff中读取一个完整的行，状态有行出错，行数据尚且不完整（LT模式下会有LINE_OPEN）等
     enum LINE_STATUS {LINE_OK = 0, LINE_BAD, LINE_OPEN};
     //主状态机解析报文的结果：有无完整的报文
     enum HTTP_CODE {NO_REQUEST, GET_REQUEST, BAD_REQUEST, NO_RESOURCE, FORBIDDEN_REQUEST, FILE_REQUEST, INTERNAL_ERROR, CLOSED_CONNECTION};
@@ -62,15 +62,15 @@ public:
     int improv;//向主函数传递socket中的读/写操作是否已完成（只是buffer状态，此时解析操作并未完成）
 
 private:
-    void init();//无参的负责初始化类中一些状态、计数等的参数为默认值
-    HTTP_CODE process_read();
+    void init();                                         //无参的负责初始化类中一些状态、计数等的参数为默认值
+    HTTP_CODE process_read();                            //主状态机：解析处理报文中的请求行、请求头、请求内容
     bool process_write(HTTP_CODE ret);
     HTTP_CODE parse_request_line(char *text);
     HTTP_CODE parse_headers(char *text);
     HTTP_CODE parse_content(char *text);
     HTTP_CODE do_request();
-    char *get_line() { return m_read_buf + m_start_line; };
-    LINE_STATUS parse_line();
+    char *get_line() { return m_read_buf + m_start_line; };//用于从状态机读取当前要解析的一行数据
+    LINE_STATUS parse_line();                              //从状态机：实现读取一行数据
     void unmap();
     bool add_response(const char *format, ...);
     bool add_content(const char *content);
@@ -92,16 +92,16 @@ private:
     sockaddr_in m_address;
     char m_read_buf[READ_BUFFER_SIZE];  //读缓冲区
     long m_read_idx;                    //作为指针记录、维护这个读缓冲区，记录数据已经读到了什么位置
-    long m_checked_idx;
-    int m_start_line;
+    long m_checked_idx;                 //在从状态机中更新当前正在分析的字符，在主状态机中用于更新m_start_line（get_line的起点）
+    int m_start_line;                   //主状态机中通过m_start_line在get_line中获得当前行的字符串（由于\r\n已经被替换成\0\0了，所以取字符串很方便）
     char m_write_buf[WRITE_BUFFER_SIZE];
     int m_write_idx;
-    CHECK_STATE m_check_state;
+    CHECK_STATE m_check_state;          //主状态机的状态（当前正在解析的报文内容：请求行 or 头部 or 内容）
     METHOD m_method;
     char m_real_file[FILENAME_LEN];
-    char *m_url;
-    char *m_version;
-    char *m_host;
+    char *m_url;                        //指向请求行中的URL的index，都是m_read_buf中的地址
+    char *m_version;                    //通过请求行解析出的http版本号，同样是m_read_buf中的地址
+    char *m_host;                       //指向请求头中的host的index，同样是m_read_buf中的地址
     long m_content_length;
     bool m_linger;
     char *m_file_address;
