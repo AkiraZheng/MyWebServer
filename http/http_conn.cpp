@@ -159,7 +159,7 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     if (!m_url || m_url[0] != '/')
         return BAD_REQUEST;
     if (strlen(m_url) == 1)
-        strcat(m_url, "judge.html");
+        strcat(m_url, "judge.html");//将url追加到字符串中
 
     //5. 请求行解析完毕，主状态机由CHECK_STATE_REQUESTLINE转移到CHECK_STATE_HEADER，解析请求头
     m_check_state = CHECK_STATE_HEADER;
