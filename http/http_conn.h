@@ -29,7 +29,7 @@
 
 class http_conn{
 public:
-    static const int FILENAME_LEN = 200;
+    static const int FILENAME_LEN = 200;     //响应资源的文件路径名的最大长度
     static const int READ_BUFFER_SIZE = 2048;//浏览器请求报文的最大长度
     static const int WRITE_BUFFER_SIZE = 1024;//服务器响应报文的最大长度
 
@@ -49,8 +49,8 @@ public:
 
 public:
     void init(int sockfd, const sockaddr_in &addr, char *, int, int, string user, string passwd, string sqlname);//有参初始化当前http连接的用户信息
-    void close_conn(bool real_close = true);
-    void process();
+    void close_conn(bool real_close = true); //从epoll中删除并关闭socket连接
+    void process(); //工作线程中取出任务（读取完数据后）进行报文解析处理
     bool read_once();
     bool write();
     sockaddr_in *get_address()
@@ -98,15 +98,15 @@ private:
     int m_write_idx;
     CHECK_STATE m_check_state;          //主状态机的状态（当前正在解析的报文内容：请求行 or 头部 or 内容）
     METHOD m_method;
-    char m_real_file[FILENAME_LEN];
+    char m_real_file[FILENAME_LEN];     //客户请求的资源在服务器上的完整路径（服务器最终返回的资源路径，root + url）
     char *m_url;                        //指向请求行中的URL的index，都是m_read_buf中的地址
     char *m_version;                    //通过请求行解析出的http版本号，同样是m_read_buf中的地址
     char *m_host;                       //指向请求头中的host的index，同样是m_read_buf中的地址
     long m_content_length;
-    bool m_linger;
+    bool m_linger;                      //用于指导服务器响应报文的Connection字段（keep-alive or close）
     char *m_file_address;
     struct stat m_file_stat;
-    struct iovec m_iv[2];
+    struct iovec m_iv[2];               //io向量机制iovec，指向响应报文的缓冲区（m_write_buf）和文件的缓冲区（m_file_address）
     int m_iv_count;
     int cgi;                         //是否启用的POST
     char *m_string;                 //存储请求头数据
