@@ -4,6 +4,8 @@
 #include <fstream>
 
 //定义http响应的一些状态信息：给浏览器返回的服务器状态信息
+//title：状态行的响应信息
+//form：响应正文的信息
 const char *ok_200_title = "OK";//状态码200表示请求成功，只有这个状态码才是正常状态
 const char *error_400_title = "Bad Request";
 const char *error_400_form = "Your request has bad syntax or is inherently impossible to staisfy.\n";
@@ -17,7 +19,7 @@ const char *error_500_form = "There was an unusual problem serving the request f
 locker m_lock;
 map<string, string> users;//存储数据库中所有已注册用户的用户名和密码（在程序启动时就先提前全部取出）
 
-/*------------------------------SQL Pool 初始化----------------------------------------*/
+/*------------------------------SQL Pool 初始化 BEGIN--------------------------------------------------------*/
 //main中初始化WebServer类中的m_connPool时会同时在HTTP类中取出一个数据库连接用于提前将所有注册过的用户信息取出存在map中
 void http_conn::initmysql_result(connection_pool *connPool)
 {
@@ -48,9 +50,9 @@ void http_conn::initmysql_result(connection_pool *connPool)
         users[temp1] = temp2;//存入map中
     }
 }
-/*------------------------------SQL Pool 初始化----------------------------------------*/
+/*------------------------------SQL Pool 初始化 END--------------------------------------------------------*/
 
-/*------------------------------Epoll socketfd处理----------------------------------------*/
+/*------------------------------Epoll socketfd处理 BEGIN---------------------------------------------------*/
 
 //设置客户端socketfd为非阻塞，这里也跟util.cpp中的setnonblocking实现是一样的
 int setnonblocking(int fd){
@@ -122,10 +124,10 @@ void http_conn::close_conn(bool real_close){
     }
 }
 
-/*------------------------------Epoll socketfd处理----------------------------------------*/
+/*------------------------------Epoll socketfd处理 END---------------------------------------------------*/
 
 
-/*------------------------------HTTP报文处理----------------------------------------*/
+/*------------------------------HTTP类初始化 BEGIN--------------------------------------------------------*/
 
 //初始化客户端连接中http_conn的一些用户状态参数，这个函数是在主线程（epoll）中收到用户的连接处理accept时调用的
 void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRTGMide, int close_log, string user, string passwd, string sqlname)
@@ -178,6 +180,10 @@ void http_conn::init()
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
 }
+
+/*------------------------------HTTP类初始化 END--------------------------------------------------------*/
+
+/*------------------------------HTTP请求报文解析：主从状态机 BEGIN----------------------------------------*/
 
 //处理主状态机状态1：解析请求行，获得GET/POST方法、url、http版本号
 http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
@@ -566,6 +572,132 @@ bool http_conn::read_once()
     }
 }
 
+//从状态机，用于一行一行解析出客户端发送请求的报文，并将解读行的状态作为返回值
+//主状态机负责对该行数据进行解析，主状态机内部调用从状态机，从状态机驱动主状态机。
+//注意，由于报文中的content没有固定的行结束标志，所以content的解析不在从状态机中进行，而是在主状态机中进行
+//状态1：LINE_OK表示读完了完整的一行（读到了行结束符\r\n）
+//状态2：LINE_BAD表示读取的行格式有误（结束符只读到了\r或\n，而不是\r + \n）
+//状态3：LINE_OPEN表示LT模式下还没接收完完整的buffer，还需等待继续recv到buffer后再次触发解析数据包
+http_conn::LINE_STATUS http_conn::parse_line()
+{
+    char temp;
+    //循环当前buffer中已读取到的数据
+    //如果是ET模式，则客户端发送的数据包是已经全部读完了的，buffer是完整的
+    //如果是LT模式，则客户端发送的数据包是分批次读取的，buffer是不完整的，所以需要LINE_OPEN状态来等待下一次读取
+    for(;m_checked_idx < m_read_idx; ++m_checked_idx){
+
+        /*m_checked_idx:    当前已确认（取出）的字符位置
+          temp:             当前读取到的m_checked_idx处的字符
+          m_read_idx:       读缓冲区中的数据长度（已经接收的socket的数据总长度）
+        */
+        temp = m_read_buf[m_checked_idx];
+
+        //1. 读到一个完整行的倒数第二个字符\r
+        if(temp == '\r'){
+            //如果已经把buffer中已经接收的数据读完了，但是此时buffer中的数据还不完整，那么就返回LINE_OPEN状态，等待下一次读取
+            if((m_checked_idx + 1) == m_read_idx){//m_read_idx是个数，所以这里index得+1
+                return LINE_OPEN;
+            }
+
+            //如果读到了完整的行，也几乎是判断出了下一个字符为'\n'就返回LINE_OK
+            //LINE_OK状态在主状态机中是可以进行行解析的状态
+            else if(m_read_buf[m_checked_idx + 1] == '\n'){
+                m_read_buf[m_checked_idx++] = '\0';//'\r'换成'\0'
+                m_read_buf[m_checked_idx++] = '\0';//'\n'换成'\0'，m_checked_idx更新为下一行的起始位置
+                return LINE_OK;
+            }
+
+            //如果读到的行格式有误，即buffer明明还没结束，但是读不到'\n'了，则返回LINE_BAD状态
+            return LINE_BAD;
+        }
+
+        //2. 读到一个完整行的最后一个字符\n
+        //情况1：正常来说对于完整的数据而言，'\n'应该已经被上面的if语句处理了，但是还存在第一种情况是LT下数据是还没读完整的
+        //      也就是对于上面的if中，已经读到了m_read_idx了，返回LINE_OPEN，等接着继续读到socket数据再触发当前函数时，就会从'\n'开始判断
+        //情况2：当前数据是坏数据，没有配套的'\r'+ '\n'，所以返回LINE_BAD
+        else if(temp == '\n'){
+            if(m_checked_idx > 1 && m_read_buf[m_checked_idx - 1] == '\r'){
+                m_read_buf[m_checked_idx - 1] = '\0';//'\r'换成'\0'
+                m_read_buf[m_checked_idx++] = '\0';//'\n'换成'\0'，m_checked_idx更新为下一行的起始位置
+                return LINE_OK;
+            }
+
+            //如果上一个字符不是'\r'，则说明数据包格式有误，返回LINE_BAD
+            return LINE_BAD;
+        }
+    }
+    return LINE_OPEN;//读完了buffer中的数据，但是数据包可能还没读完，需要等待下一次读取
+}
+
+
+/*------------------------------HTTP请求报文解析：主从状态机 END----------------------------------------*/
+
+/*------------------------------HTTP响应报文打包 BEGIN-------------------------------------------------*/
+
+//更新m_write_idx指针和缓冲区m_write_buf中的内容：将数据写入缓冲区
+//采用可变参函数，向缓冲区写入格式化字符串
+//用va_list va_start va_end来实现变参的列表处理
+//用vsprintf将格式化的字符串写入缓冲区
+bool http_conn::add_response(const char *format, ...)
+{
+    //已些入的数据m_write_idx指针越界，缓冲区m_write_buf不允许再写入了
+    if (m_write_idx >= WRITE_BUFFER_SIZE)
+        return false;
+
+    //可变参数列表接收，通过vsnprintf函数格式化写入缓冲区
+    va_list arg_list;
+    va_start(arg_list, format);
+    int len = vsnprintf(m_write_buf + m_write_idx, WRITE_BUFFER_SIZE - 1 - m_write_idx, format, arg_list);
+    //格式化的字符串长度超过缓冲区剩余长度，写入失败
+    if (len >= (WRITE_BUFFER_SIZE - 1 - m_write_idx))
+    {
+        va_end(arg_list);
+        return false;
+    }
+
+    //格式化字符串写入缓冲区成功，更新m_write_idx指针
+    m_write_idx += len;
+    va_end(arg_list);
+
+    // LOG_INFO("request:%s", m_write_buf);
+
+    return true;
+}
+
+//1. 添加状态行：HTTP/1.1 200 OK
+bool http_conn::add_status_line(int status, const char *title)
+{
+    return add_response("%s %d %s\r\n", "HTTP/1.1", status, title);
+}
+//2. 添加消息报头和空行
+// Content-Length字段：Content-Length: 78443
+// Connection字段：Connection: keep-alive
+bool http_conn::add_headers(int content_len)
+{
+    return add_content_length(content_len) && add_linger() &&
+           add_blank_line();
+}
+bool http_conn::add_content_length(int content_len)
+{
+    return add_response("Content-Length:%d\r\n", content_len);
+}
+// bool http_conn::add_content_type()
+// {
+//     return add_response("Content-Type:%s\r\n", "text/html");
+// }
+bool http_conn::add_linger()
+{
+    return add_response("Connection:%s\r\n", (m_linger == true) ? "keep-alive" : "close");
+}
+bool http_conn::add_blank_line()
+{
+    return add_response("%s", "\r\n");
+}
+//3. 添加响应体：文件资源无法访问的才需要调用这个函数，其他情况都是通过mmap映射到内存中的
+bool http_conn::add_content(const char *content)
+{
+    return add_response("%s", content);
+}
 
 //报文打包状态机：根据服务器处理HTTP请求的结果和状态ret，打包相应的HTTP响应报文
 bool http_conn::process_write(HTTP_CODE ret)
@@ -638,70 +770,82 @@ bool http_conn::process_write(HTTP_CODE ret)
     return true;
 }
 
-//向socketfd写数据
+//向socketfd写数据：
+// Reactor模式下，工作线程调用users[sockfd].write函数向客户端发送响应报文
+// Proactor模式下，主线程调用users[sockfd].write函数向客户端发送响应报文，不经过工作线程处理
 bool http_conn::write()
 {
+    int temp = 0;
 
+    //没有数据需要发送，将sockfd从epoll中注册写事件（EPOLLOUT）改为读事件（EPOLLIN）继续监听
+    if (bytes_to_send == 0)
+    {
+        modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+        init();
+        return true;
+    }
+
+    //将响应报文发送给客户端
+    while (1)
+    {
+        temp = writev(m_sockfd, m_iv, m_iv_count);//将多个缓冲区iovec的数据一次性写入（发送）I/O描述符（m_sockfd）
+
+        //发送失败：eagain满了暂时不可用 or 其他情况（取消映射）
+        if (temp < 0)
+        {
+            //I/O缓冲区暂时满了，将sockfd再次注册写事件（EPOLLOUT）继续等待下一次写事件继续发送
+            if (errno == EAGAIN)
+            {
+                modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+                return true;
+            }
+
+            //未知原因发送失败，取消响应资源文件的映射
+            unmap();
+            return false;
+        }
+
+        //writev负责将缓冲区iovec数据写入I/O描述符，但是不会对已发送的数据进行删除，所以需要更新缓冲区iovec已发送的数据长度
+        bytes_have_send += temp;
+        bytes_to_send -= temp;
+
+        //第一个缓冲区m_write_buf已全部发送完
+        if (bytes_have_send >= m_iv[0].iov_len)
+        {
+            m_iv[0].iov_len = 0;
+            m_iv[1].iov_base = m_file_address + (bytes_have_send - m_write_idx);
+            m_iv[1].iov_len = bytes_to_send;
+        }
+        //第一个缓冲区m_write_buf还没发送完，更新m_iv[0]后继续发送
+        else
+        {
+            m_iv[0].iov_base = m_write_buf + bytes_have_send;
+            m_iv[0].iov_len = m_iv[0].iov_len - bytes_have_send;
+        }
+
+        //缓冲区全部发送完毕，取消响应资源文件的映射并重新将sockfd注册为读事件（EPOLLIN）
+        if (bytes_to_send <= 0)
+        {
+            unmap();
+            modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+
+            //保持长连接，重新初始化http_conn类中的一些参数
+            if (m_linger)
+            {
+                init();
+                return true;
+            }
+            //短连接return false，在webserver类或者工作线程中结束write后会调用deal_timer中timer的cb_func函数关闭连接
+            else
+            {
+                return false;
+            }
+        }
+    }
     return false;
 }
 
-
-//从状态机，用于一行一行解析出客户端发送请求的报文，并将解读行的状态作为返回值
-//主状态机负责对该行数据进行解析，主状态机内部调用从状态机，从状态机驱动主状态机。
-//注意，由于报文中的content没有固定的行结束标志，所以content的解析不在从状态机中进行，而是在主状态机中进行
-//状态1：LINE_OK表示读完了完整的一行（读到了行结束符\r\n）
-//状态2：LINE_BAD表示读取的行格式有误（结束符只读到了\r或\n，而不是\r + \n）
-//状态3：LINE_OPEN表示LT模式下还没接收完完整的buffer，还需等待继续recv到buffer后再次触发解析数据包
-http_conn::LINE_STATUS http_conn::parse_line()
-{
-    char temp;
-    //循环当前buffer中已读取到的数据
-    //如果是ET模式，则客户端发送的数据包是已经全部读完了的，buffer是完整的
-    //如果是LT模式，则客户端发送的数据包是分批次读取的，buffer是不完整的，所以需要LINE_OPEN状态来等待下一次读取
-    for(;m_checked_idx < m_read_idx; ++m_checked_idx){
-
-        /*m_checked_idx:    当前已确认（取出）的字符位置
-          temp:             当前读取到的m_checked_idx处的字符
-          m_read_idx:       读缓冲区中的数据长度（已经接收的socket的数据总长度）
-        */
-        temp = m_read_buf[m_checked_idx];
-
-        //1. 读到一个完整行的倒数第二个字符\r
-        if(temp == '\r'){
-            //如果已经把buffer中已经接收的数据读完了，但是此时buffer中的数据还不完整，那么就返回LINE_OPEN状态，等待下一次读取
-            if((m_checked_idx + 1) == m_read_idx){//m_read_idx是个数，所以这里index得+1
-                return LINE_OPEN;
-            }
-
-            //如果读到了完整的行，也几乎是判断出了下一个字符为'\n'就返回LINE_OK
-            //LINE_OK状态在主状态机中是可以进行行解析的状态
-            else if(m_read_buf[m_checked_idx + 1] == '\n'){
-                m_read_buf[m_checked_idx++] = '\0';//'\r'换成'\0'
-                m_read_buf[m_checked_idx++] = '\0';//'\n'换成'\0'，m_checked_idx更新为下一行的起始位置
-                return LINE_OK;
-            }
-
-            //如果读到的行格式有误，即buffer明明还没结束，但是读不到'\n'了，则返回LINE_BAD状态
-            return LINE_BAD;
-        }
-
-        //2. 读到一个完整行的最后一个字符\n
-        //情况1：正常来说对于完整的数据而言，'\n'应该已经被上面的if语句处理了，但是还存在第一种情况是LT下数据是还没读完整的
-        //      也就是对于上面的if中，已经读到了m_read_idx了，返回LINE_OPEN，等接着继续读到socket数据再触发当前函数时，就会从'\n'开始判断
-        //情况2：当前数据是坏数据，没有配套的'\r'+ '\n'，所以返回LINE_BAD
-        else if(temp == '\n'){
-            if(m_checked_idx > 1 && m_read_buf[m_checked_idx - 1] == '\r'){
-                m_read_buf[m_checked_idx - 1] = '\0';//'\r'换成'\0'
-                m_read_buf[m_checked_idx++] = '\0';//'\n'换成'\0'，m_checked_idx更新为下一行的起始位置
-                return LINE_OK;
-            }
-
-            //如果上一个字符不是'\r'，则说明数据包格式有误，返回LINE_BAD
-            return LINE_BAD;
-        }
-    }
-    return LINE_OPEN;//读完了buffer中的数据，但是数据包可能还没读完，需要等待下一次读取
-}
+/*------------------------------HTTP响应报文打包 END--------------------------------------------------*/
 
 //进行报文解析处理
 void http_conn::process()
@@ -723,4 +867,3 @@ void http_conn::process()
     modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);//报文生成成功，注册写事件（EPOLLOUT），发送响应报文
 }
 
-/*------------------------------HTTP报文处理----------------------------------------*/

@@ -24,7 +24,7 @@
 
 参考本人博客：[WebServer学习6：HTTP连接处理及报文机制](https://akirazheng.github.io/2024/03/11/WebServer%E5%AD%A6%E4%B9%A06%EF%BC%9AHTTP%E8%BF%9E%E6%8E%A5%E5%A4%84%E7%90%86%E5%8F%8A%E6%8A%A5%E6%96%87%E6%9C%BA%E5%88%B6/)
 
-## 其它分支：WebServer相关的一些轮子和Demo
+## Demos_of_Webserver分支：WebServer相关的一些轮子和Demo
 
 ### 1. 简单的epoll实现
 
