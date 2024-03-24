@@ -20,7 +20,8 @@ public:
     }
 
     //异步方式中 日志线程的工作函数
-    static void *flush_log_thread(void *args){
+    static void *flush_log_thread(void *args)
+    {
         Log::get_instance()->async_write_log();
     }
 
@@ -41,7 +42,7 @@ private:
     //异步日志写入(从阻塞队列中取出日志消息并写入日志文件)
     void *async_write_log(){
         string single_log;//存储从pop中取出的单条日志
-        while(m_log_queue->pop(single_log)){
+        while (m_log_queue->pop(single_log)){
             //结束消费者阻塞后，将日志写入文件缓冲区（还需要配合fflush将缓冲区内容写入文件）
             m_mutex.lock();
             fputs(single_log.c_str(), m_fp);

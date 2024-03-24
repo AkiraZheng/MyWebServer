@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <unistd.h>//getopt，close，alarm函数
 #include <netinet/in.h>//sockaddr_in
+#include <arpa/inet.h>//inet_addr
 #include <fcntl.h>
 
 #include "./threadpool/threadpool.h"

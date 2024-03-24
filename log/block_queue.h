@@ -17,11 +17,13 @@
 #include <sys/time.h>
 #include "../lock/locker.h"
 
-template <typename T>
+using namespace std;
+
+template <class T>
 class block_queue{
 public:
     //构造函数：初始化创建队列
-    block_queue::block_queue(int max_size = 1000){
+    block_queue(int max_size = 1000){
         if(max_size <= 0)exit(-1);
 
         m_max_size = max_size;

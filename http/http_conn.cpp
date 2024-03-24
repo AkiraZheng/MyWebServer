@@ -770,6 +770,15 @@ bool http_conn::process_write(HTTP_CODE ret)
     return true;
 }
 
+void http_conn::unmap()
+{
+    if (m_file_address)
+    {
+        munmap(m_file_address, m_file_stat.st_size);
+        m_file_address = 0;
+    }
+}
+
 //向socketfd写数据：
 // Reactor模式下，工作线程调用users[sockfd].write函数向客户端发送响应报文
 // Proactor模式下，主线程调用users[sockfd].write函数向客户端发送响应报文，不经过工作线程处理

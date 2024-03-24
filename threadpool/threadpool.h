@@ -79,14 +79,14 @@ bool threadpool<T>::append(T *request, int state){
     //操作工作队列时一定要加锁，因为它被所有线程共享
     m_queuelocker.lock();
     
-    if(m_workerqueue.size() >= m_max_requests){
+    if(m_workqueue.size() >= m_max_requests){
         //请求队列满了
         m_queuelocker.unlock();
         return false;
     }
 
     request->m_state = state;//state 0代表读事件，state 1代表写事件
-    m_workerqueue.push_back(request);
+    m_workqueue.push_back(request);
 
     m_queuelocker.unlock();
 
@@ -131,14 +131,14 @@ void threadpool<T>::run(){
 
         //再查看确认是否有任务需要处理，如果没有的话就continue继续while循环
         m_queuelocker.lock();
-        if(m_workerqueue.empty()){
+        if(m_workqueue.empty()){
             m_queuelocker.unlock();
             continue;
         }
 
         //有任务则取出任务并处理
-        T *request = m_workerqueue.front();
-        m_workerqueue.pop_front();
+        T *request = m_workqueue.front();
+        m_workqueue.pop_front();
         m_queuelocker.unlock();
 
         if(!request){//任务为空任务

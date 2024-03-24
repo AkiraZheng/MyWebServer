@@ -260,6 +260,8 @@ void Utils::timer_handler()
 }
 
 //删除epoll中非活动连接的客户端socket、关闭连接
+int *Utils::u_pipefd = 0;
+int Utils::u_epollfd = 0;
 class Utils;//前向声明
 void cb_func(client_data *user_data){
     //删除主程序epoll中对应客户端的fd
