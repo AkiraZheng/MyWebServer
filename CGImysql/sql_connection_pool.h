@@ -9,7 +9,7 @@
 #include <iostream>
 #include <string>
 #include "../lock/locker.h"
-// #include "../log/log.h"
+#include "../log/log.h"
 
 using namespace std;
 

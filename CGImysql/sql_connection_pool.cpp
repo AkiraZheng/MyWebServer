@@ -36,7 +36,7 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
         con = mysql_init(con);//初始化一个句柄:数据库结构体的指针，用于存储数据库连接信息
 
         if(con == NULL){//初始化失败
-            // LOG_ERROR("MySQL Init Error");
+            LOG_ERROR("MySQL Init Error");
             exit(1);
         }
 
@@ -45,7 +45,7 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
         con = mysql_real_connect(con, url.c_str(), User.c_str(), PassWord.c_str(), DBName.c_str(), Port, NULL, 0);
 
         if(con == NULL){//连接失败
-            // LOG_ERROR("MySQL Connect Error");
+            LOG_ERROR("MySQL Connect Error");
             exit(1);
         }
         connList.push_back(con);//连接成功，将连接放入连接池

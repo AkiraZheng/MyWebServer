@@ -42,6 +42,22 @@ void WebServer::init(int port, string user, string passWord, string databaseName
     m_actormodel = actor_model;
 }
 
+//初始化日志
+void WebServer::log_write()
+{
+    if (0 == m_close_log)
+    {
+        //初始化日志
+        if (1 == m_log_write)
+            //异步方式
+            Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 800);
+        else
+            //同步方式
+            Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 0);
+    }
+}
+
+
 //初始化创建线程池
 void WebServer::thread_pool()
 {
@@ -57,6 +73,7 @@ void WebServer::sql_pool()
     //初始化数据库读取表
     users->initmysql_result(m_connPool);
 }
+
 
 void WebServer::trig_mode()
 {
@@ -117,7 +134,7 @@ void WebServer::adjust_timer(util_timer *timer)
     timer->expire = cur + 3 * TIMESLOT;//重新设置定时器的超时时间
     utils.m_timer_lst.adjust_timer(timer);//调整定时器在链表中的位置（向后调整）,链表是升序的
 
-    // LOG_INFO("%s", "adjust timer once");
+    LOG_INFO("%s", "adjust timer once");
 }
 //3. 客户端关闭连接，删除对应的定时器、关闭socketfd和从epoll中移除（cb_func实现）
 void WebServer::deal_timer(util_timer *timer, int sockfd)
@@ -128,7 +145,7 @@ void WebServer::deal_timer(util_timer *timer, int sockfd)
         utils.m_timer_lst.del_timer(timer);
     }
 
-    // LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
+    LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
 }
 
 //处理服务端收到客户端 连接请求
@@ -143,14 +160,14 @@ bool WebServer::dealclientdata(){
         //接受新客户端连接
         int connfd = accept(m_listenfd, (struct sockaddr*)&client_address, &client_addrlength);
         if(connfd < 0){
-            // LOG_ERROR("%s:errno is:%d", "accept error", errno);
+            LOG_ERROR("%s:errno is:%d", "accept error", errno);
             return false;
         }
 
         //服务器连接数量达到上限了，拒绝浏览器的连接
         if(http_conn::m_user_count >= MAX_FD){
             utils.show_error(connfd, "Internal server busy");//向客户端发送错误信息，并关闭连接
-            // LOG_ERROR("%s", "Internal server busy");
+            LOG_ERROR("%s", "Internal server busy");
             return false;
         }
         timer(connfd, client_address);//在timer中执行http_conn初始化,并将connfd加入epoll监听，为新的客户端连接在定时器容器中创建定时器
@@ -162,14 +179,14 @@ bool WebServer::dealclientdata(){
         while(1){
             int connfd = accept(m_listenfd, (struct sockaddr*)&client_address, &client_addrlength);
             if(connfd < 0){
-                // LOG_ERROR("%s:errno is:%d", "accept error", errno);
+                LOG_ERROR("%s:errno is:%d", "accept error", errno);
                 break;
             }
 
             //服务器连接数量达到上限了，拒绝浏览器的连接
             if(http_conn::m_user_count >= MAX_FD){
                 utils.show_error(connfd, "Internal server busy");//向客户端发送错误信息，并关闭连接
-                // LOG_ERROR("%s", "Internal server busy");
+                LOG_ERROR("%s", "Internal server busy");
                 return false;
             }
             timer(connfd, client_address);//在timer中执行http_conn初始化,并将connfd加入epoll监听，为新的客户端连接在定时器容器中创建定时器
@@ -251,7 +268,7 @@ void WebServer::dealwithread(int sockfd){
     //也就是工作线程只处理http_conn对象的报文解析处理业务工作，不对socket进行读写
     else{
         if(users[sockfd].read_once()){//主线程中先处理读事件
-            // LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
 
             //将读取的数据放在线程池请求队列中进行解析和打包响应
             m_pool->append_p(users + sockfd);
@@ -306,7 +323,7 @@ void WebServer::dealwithwrite(int sockfd){
     //写事件一般是在响应中打包完数据了，所以写完就结束了，这里不需要再将任务放进线程池中
     else{
         if(users[sockfd].write()){//主线程中先处理写事件
-            // LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
 
             //成功发送数据，重新设置定时器表示连接重新活跃
             if (timer)
@@ -360,7 +377,7 @@ void WebServer::eventListen(){
     //监听
     ret = listen(m_listenfd, 5);
     assert(ret >= 0);
-    // LOG_INFO("%s%d", "listen the port ", m_port);
+    LOG_INFO("%s%d", "listen the port ", m_port);
 
     // utils.init(TIMESLOT);
 
@@ -404,7 +421,7 @@ void WebServer::eventLoop(){
 
         //遍历events数组,处理就绪事件
         if(number < 0 && errno != EINTR){
-            // LOG_ERROR("%s", "epoll failure");
+            LOG_ERROR("%s", "epoll failure");
             break;
         }
         for (int i = 0; i < number; i++){
@@ -419,15 +436,15 @@ void WebServer::eventLoop(){
             //对方异常断开连接
             else if(events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)){
                 //对方异常断开连接,从定时器容器中移除对应的定时器节点
-                // LOG_ERROR("%s", "EPOLLRDHUP | EPOLLHUP | EPOLLERR");
+                LOG_ERROR("%s", "EPOLLRDHUP | EPOLLHUP | EPOLLERR");
                 util_timer *timer = users_timer[sockfd].timer;
                 deal_timer(timer, sockfd);//主动删除定时器和关闭连接
             }
             //管道读端有事件发生:信号处理，通过dealwithsignal从epoll管道读端读取信号，并解析对应的信号（SIGALRM-SIGTERM）
             else if((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN)){
                 bool flag = dealwithsignal(timeout, stop_server);
-                // if (false == flag)
-                    // LOG_ERROR("%s", "dealclientdata failure");
+                if (false == flag)
+                    LOG_ERROR("%s", "dealclientdata failure");
             }
             //处理客户fd连接上接收到的数据
             else if(events[i].events & EPOLLIN){
@@ -443,7 +460,7 @@ void WebServer::eventLoop(){
         {
             utils.timer_handler();
 
-            // LOG_INFO("%s", "timer tick");
+            LOG_INFO("%s", "timer tick");
 
             timeout = false;
         }

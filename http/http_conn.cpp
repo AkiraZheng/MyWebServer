@@ -30,7 +30,7 @@ void http_conn::initmysql_result(connection_pool *connPool)
     //在user表中检索username，passwd数据，浏览器端输入
     if (mysql_query(mysql, "SELECT username,passwd FROM user"))
     {
-        // LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
+        LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
     }
 
     //从表中检索完整的结果集
@@ -292,7 +292,7 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
     else
     {
         //其它字段本项目不解析，直接跳过
-        // LOG_INFO("oop!unknow header: %s", text);
+        LOG_INFO("oop!unknow header: %s", text);
     }
     return NO_REQUEST;
 }
@@ -487,7 +487,7 @@ http_conn::HTTP_CODE http_conn::process_read()
         text = get_line();
         m_start_line = m_checked_idx;//更新为下一行的起始位置，方便下次调用get_line获取当前行的字符串
 
-        // LOG_INFO("%s", text);
+        LOG_INFO("%s", text);
 
         //主状态机根据当前状态机状态进行报文解析
         switch(m_check_state){
@@ -659,7 +659,7 @@ bool http_conn::add_response(const char *format, ...)
     m_write_idx += len;
     va_end(arg_list);
 
-    // LOG_INFO("request:%s", m_write_buf);
+    LOG_INFO("request:%s", m_write_buf);
 
     return true;
 }

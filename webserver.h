@@ -35,7 +35,7 @@ public:
     
     void thread_pool();
     void sql_pool();
-    // void log_write();
+    void log_write();
     void trig_mode();
     void eventListen();//socket监听，实现epoll
     void eventLoop();//epoll_wait阻塞监听事件
@@ -43,7 +43,7 @@ public:
     void adjust_timer(util_timer *timer);
     void deal_timer(util_timer *timer, int sockfd);
     bool dealclientdata();//处理客户端连接
-    bool dealwithsignal(bool& timeout, bool& stop_server);
+    bool dealwithsignal(bool& timeout, bool& stop_server);//处理SIGALRM-SIGTERM信号
     void dealwithread(int sockfd);
     void dealwithwrite(int sockfd);
 
