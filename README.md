@@ -33,7 +33,7 @@
 参考本人博客：[WebServer学习8：通用日志系统的设计](https://akirazheng.github.io/2024/03/27/WebServer%E5%AD%A6%E4%B9%A08%EF%BC%9A%E9%80%9A%E7%94%A8%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F%E7%9A%84%E8%AE%BE%E8%AE%A1/)
 
 ### 9. 利用WebBench进行压力测试
-参考本人博客：[WebServer项目实战9：WebBench压力测试](https://akirazheng.github.io/2024/03/27/WebServer%E9%A1%B9%E7%9B%AE%E5%AE%9E%E6%88%989%EF%BC%9AWebBench%E5%8E%8B%E5%8A%9B%E6%B5%8B%E8%AF%95/)
+参考本人博客：[WebServer学习9：WebBench压力测试](https://akirazheng.github.io/2024/03/27/WebServer%E5%AD%A6%E4%B9%A09%EF%BC%9AWebBench%E5%8E%8B%E5%8A%9B%E6%B5%8B%E8%AF%95/)
 
 ## Demos_of_Webserver分支：WebServer相关的一些轮子和Demo
 
