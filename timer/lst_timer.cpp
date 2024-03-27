@@ -233,7 +233,7 @@ void Utils::sig_handler(int sig){
 void Utils::addsig(int sig, void(handle)(int), bool restart){
     //sigaction结构体：用于设置和处理信号处理程序的结构体
     /*struct sigaction {
-        void (*sa_handler)(int); //信号处理函数，当收到sa_sigaction信号时，执行sa_handler函数
+        void (*sa_handler)(int); //信号处理函数，当收到信号时，执行sa_handler函数
         void (*sa_sigaction)(int, siginfo_t *, void *); //信号处理函数，与 sa_handler 互斥
         sigset_t sa_mask; //在信号处理函数执行期间需要阻塞的信号集合
         int sa_flags; //指定信号处理的行为，触发sa_handler信号处理函数时会被自动传入sa_handler函数中
@@ -264,7 +264,7 @@ int *Utils::u_pipefd = 0;
 int Utils::u_epollfd = 0;
 class Utils;//前向声明
 void cb_func(client_data *user_data){
-    //删除主程序epoll中对应客户端的fd
+    //删除主程序epoll中对应客户端的fdSchufa
     epoll_ctl(Utils::u_epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);
     assert(user_data);//断言，确保user_data不为空，否则直接返回
 
